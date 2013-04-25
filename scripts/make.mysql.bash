@@ -142,13 +142,33 @@ function git_tree() {
 
 # compute the number of cpus in this system.  used to parallelize the build.
 function get_ncpus() {
-    if [ -f /proc/cpuinfo ]; then
-        grep bogomips /proc/cpuinfo | wc -l
-    elif [ $system = darwin ] ; then
-        sysctl -n hw.ncpu
-    else
-        echo 1
-    fi
+    $os=`uname -s 2> /dev/null`
+    case "$os" in
+        "Linux"|"uClinux")
+           egrep '(^CPU|processor.*:.*)' /proc/cpuinfo|wc -l
+           ;;
+        "FreeBSD"|"GNU/kFreeBSD")
+           sysctl -n hw.ncpu
+           ;;
+        "NetBSD")
+           sysctl -n hw.ncpu
+           ;;
+        "OpenBSD")
+           sysctl -n hw.ncpu
+           ;;
+        "DragonFly")
+           sysctl -n hw.ncpu
+           ;;
+        "Darwin")
+           sysctl -n hw.ncpu
+           ;;
+        "SunOS")
+           kstat -m cpu_info | grep -c "module: cpu_info"
+           ;;
+        *)
+           echo 1
+           ;;
+    esac
 }
 
 function build_jemalloc() {
