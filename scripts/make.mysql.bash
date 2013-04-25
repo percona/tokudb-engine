@@ -98,7 +98,7 @@ function github_download() {
         rm -f $dest.tar.gz
     else
         tempdir=$(mktemp -d -p $PWD)
-        retry git clone git@github.com:${repo}.git $tempdir
+        retry git clone https://github.com/${repo}.git $tempdir
         if [ $? != 0 ] ; then return; fi
         pushd $tempdir
         if [ $? != 0 ] ; then return; fi
