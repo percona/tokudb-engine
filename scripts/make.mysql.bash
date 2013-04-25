@@ -142,8 +142,8 @@ function git_tree() {
 
 # compute the number of cpus in this system.  used to parallelize the build.
 function get_ncpus() {
-    $os=`uname -s 2> /dev/null`
-    case "$os" in
+    OS=`uname -s 2> /dev/null`
+    case "$OS" in
         "Linux"|"uClinux")
            egrep '(^CPU|processor.*:.*)' /proc/cpuinfo|wc -l
            ;;
