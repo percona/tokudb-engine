@@ -689,6 +689,13 @@ jemalloc_version=3.3.0
 jemalloc_tree=
 backup_tree=
 
+# TokuKV [ft-index] not supported on 32-bit systems
+if [ `echo $arch|grep -c "64"` -ne 1 ]; then
+	echo "TokuKV is not supported on 32-bit systems."
+	echo "Current arch: $arch"
+	exit 1;
+fi
+
 while [ $# -gt 0 ] ; do
     arg=$1; shift
     if [[ $arg =~ --(.*)=(.*) ]] ; then
