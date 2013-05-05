@@ -6367,6 +6367,8 @@ compression_method_to_row_type(enum toku_compression_method method)
         return ROW_TYPE_TOKU_QUICKLZ;
     case TOKU_LZMA_METHOD:
         return ROW_TYPE_TOKU_LZMA;
+    case TOKU_LZ4_METHOD:
+        return ROW_TYPE_TOKU_LZ4;
     case TOKU_FAST_COMPRESSION_METHOD:
         return ROW_TYPE_TOKU_FAST;
     case TOKU_SMALL_COMPRESSION_METHOD:
@@ -6411,6 +6413,8 @@ row_type_to_compression_method(enum row_type type)
         return TOKU_QUICKLZ_METHOD;
     case ROW_TYPE_TOKU_LZMA:
         return TOKU_LZMA_METHOD;
+    case ROW_TYPE_TOKU_LZ4:
+        return TOKU_LZ4_METHOD;
     case ROW_TYPE_TOKU_SMALL:
         return TOKU_SMALL_COMPRESSION_METHOD;
     case ROW_TYPE_TOKU_FAST:
@@ -6821,6 +6825,8 @@ row_format_to_row_type(srv_row_format_t row_format)
         return ROW_TYPE_TOKU_QUICKLZ;
     case SRV_ROW_FORMAT_LZMA:
         return ROW_TYPE_TOKU_LZMA;
+    case SRV_ROW_FORMAT_LZ4:
+        return ROW_TYPE_TOKU_LZ4;
     case SRV_ROW_FORMAT_SMALL:
         return ROW_TYPE_TOKU_SMALL;
     case SRV_ROW_FORMAT_FAST:
