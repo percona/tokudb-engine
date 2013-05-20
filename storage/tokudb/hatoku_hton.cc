@@ -202,6 +202,7 @@ static const char *tokudb_row_format_names[] = {
     "tokudb_fast",
     "tokudb_small",
     "tokudb_default",
+    "tokudb_lz4",
     NullS
 };
 
