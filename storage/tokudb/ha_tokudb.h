@@ -215,6 +215,10 @@ private:
     bool icp_went_out_of_range;
 
     //
+    // last key read from a secondary index for finding primary key
+    //
+    DBT debug_last_secondary_key;
+    //
     // last key returned by ha_tokudb's cursor
     //
     DBT last_key;
@@ -268,6 +272,8 @@ private:
     // does not carry any state throughout the class.
     //
     uchar *primary_key_buff;
+
+    uchar *debug_secondary_key_buff;
 
     //
     // ranges of prelocked area, used to know how much to bulk fetch

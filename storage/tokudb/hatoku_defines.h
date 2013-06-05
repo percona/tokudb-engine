@@ -182,6 +182,7 @@ PATENT RIGHTS GRANT:
 #endif
 
 extern ulong tokudb_debug;
+extern ulong tokudb_debug_behavior;
 
 //
 // returns maximum length of dictionary name, such as key-NAME
@@ -205,6 +206,7 @@ extern ulong tokudb_debug;
 #define TOKUDB_DEBUG_ERROR 16
 #define TOKUDB_DEBUG_TXN 32
 #define TOKUDB_DEBUG_AUTO_INCREMENT 64
+//128 skipped
 #define TOKUDB_DEBUG_LOCK 256
 #define TOKUDB_DEBUG_LOCKRETRY 512
 #define TOKUDB_DEBUG_CHECK_KEY 1024
@@ -213,6 +215,11 @@ extern ulong tokudb_debug;
 #define TOKUDB_DEBUG_UPSERT 8192
 #define TOKUDB_DEBUG_CHECK (1<<14)
 #define TOKUDB_DEBUG_ANALYZE (1<<15)
+
+// tokudb behavior options
+#define TOKUDB_DEBUG_BEHAVIOR_DISABLE_PRELOCKING (1<<0)
+#define TOKUDB_DEBUG_BEHAVIOR_LOG_PRELOCKS (1<<1)
+#define TOKUDB_DEBUG_BEHAVIOR_REMEMBER_SECONDARY_KEY_POINT_QUERY (1<<2)
 
 #define TOKUDB_TRACE(f, ...) \
     printf("%d:%s:%d:" f, my_tid(), __FILE__, __LINE__, ##__VA_ARGS__);

@@ -336,6 +336,7 @@ handlerton *tokudb_hton;
 const char *ha_tokudb_ext = ".tokudb";
 char *tokudb_data_dir;
 ulong tokudb_debug;
+ulong tokudb_debug_behavior;
 DB_ENV *db_env;
 DB* metadata_db;
 HASH tokudb_open_tables;
@@ -607,6 +608,16 @@ static int tokudb_init_func(void *p) {
     }
 
     if (tokudb_debug & TOKUDB_DEBUG_INIT) TOKUDB_TRACE("%s:env open:flags=%x\n", __FUNCTION__, tokudb_init_flags);
+    uint32_t env_debug_flags;
+    env_debug_flags = 0;
+    if (tokudb_debug_behavior & TOKUDB_DEBUG_BEHAVIOR_DISABLE_PRELOCKING) {
+        env_debug_flags |= ENV_DEBUG_IGNORE_PRELOCK;
+    }
+    if (tokudb_debug_behavior) {
+        TOKUDB_TRACE("%s:env debug_behavior=%" PRIu32 "\n", __FUNCTION__, env_debug_flags);
+    }
+    r = db_env->set_debug_options(db_env, env_debug_flags);
+    assert(r==0);
 
     r = db_env->set_generate_row_callback_for_put(db_env,generate_row_for_put);
     assert(r == 0);
@@ -1972,6 +1983,8 @@ static MYSQL_SYSVAR_ULONGLONG(cache_size, tokudb_cache_size,
 static MYSQL_SYSVAR_ULONGLONG(max_lock_memory, tokudb_max_lock_memory, PLUGIN_VAR_READONLY, "TokuDB max memory for locks", NULL, NULL, 0, 0, ~0ULL, 0);
 static MYSQL_SYSVAR_ULONG(debug, tokudb_debug, 0, "TokuDB Debug", NULL, NULL, 0, 0, ~0UL, 0);
 
+static MYSQL_SYSVAR_ULONG(debug_behavior, tokudb_debug_behavior, 0, "TokuDB Debug Behavior", NULL, NULL, 0, 0, ~0UL, 0);
+
 static MYSQL_SYSVAR_STR(log_dir, tokudb_log_dir, PLUGIN_VAR_READONLY, "TokuDB Log Directory", NULL, NULL, NULL);
 
 static MYSQL_SYSVAR_STR(data_dir, tokudb_data_dir, PLUGIN_VAR_READONLY, "TokuDB Data Directory", NULL, NULL, NULL);
@@ -1999,6 +2012,7 @@ static struct st_mysql_sys_var *tokudb_system_variables[] = {
     MYSQL_SYSVAR(data_dir),
     MYSQL_SYSVAR(log_dir),
     MYSQL_SYSVAR(debug),
+    MYSQL_SYSVAR(debug_behavior),
     MYSQL_SYSVAR(commit_sync),
     MYSQL_SYSVAR(lock_timeout),
     MYSQL_SYSVAR(cleaner_period),

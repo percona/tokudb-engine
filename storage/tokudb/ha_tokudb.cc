@@ -96,6 +96,8 @@ PATENT RIGHTS GRANT:
 #include "hatoku_cmp.h"
 extern "C" {
 #include "stdint.h"
+#define __STDC_FORMAT_MACROS
+#include <inttypes.h>
 #if defined(_WIN32)
 #include "misc.h"
 #endif
@@ -1896,6 +1898,14 @@ int ha_tokudb::open(const char *name, int mode, uint test_if_locked) {
         ret_val = 1;
         goto exit;
     }
+    if (tokudb_debug_behavior & TOKUDB_DEBUG_BEHAVIOR_REMEMBER_SECONDARY_KEY_POINT_QUERY) {
+        debug_secondary_key_buff = (uchar*)my_malloc(max_key_length, MYF(MY_WME));
+        if (debug_secondary_key_buff == NULL) {
+            ret_val = 1;
+            goto exit;
+        }
+    }
+
 
     size_range_query_buff = get_tokudb_read_buf_size(thd);
     range_query_buff = (uchar *)my_malloc(size_range_query_buff, MYF(MY_WME));
@@ -1975,6 +1985,8 @@ exit:
         rec_buff = NULL;
         my_free(rec_update_buff, MYF(MY_ALLOW_ZERO_PTR));
         rec_update_buff = NULL;
+        my_free(debug_secondary_key_buff, MYF(MY_ALLOW_ZERO_PTR));
+        debug_secondary_key_buff = NULL;
         
         if (error) {
             my_errno = error;
@@ -2255,6 +2267,7 @@ int ha_tokudb::__close() {
     my_free(rec_update_buff, MYF(MY_ALLOW_ZERO_PTR));
     my_free(blob_buff, MYF(MY_ALLOW_ZERO_PTR));
     my_free(alloc_ptr, MYF(MY_ALLOW_ZERO_PTR));
+    my_free(debug_secondary_key_buff, MYF(MY_ALLOW_ZERO_PTR));
     my_free(range_query_buff, MYF(MY_ALLOW_ZERO_PTR));
     for (uint32_t i = 0; i < sizeof(mult_rec_dbt)/sizeof(mult_rec_dbt[0]); i++) {
         if (mult_rec_dbt[i].flags == DB_DBT_REALLOC &&
@@ -4613,6 +4626,7 @@ int ha_tokudb::index_init(uint keynr, bool sorted) {
         goto exit;
     }
     memset((void *) &last_key, 0, sizeof(last_key));
+    memset((void *) &debug_last_secondary_key, 0, sizeof(debug_last_secondary_key));
 
     if (thd_sql_command(thd) == SQLCOM_SELECT) {
         set_query_columns(keynr);
@@ -4767,6 +4781,13 @@ int ha_tokudb::read_primary_key(uchar * buf, uint keynr, DBT const *row, DBT con
             buf,
             &has_null
             );
+        if (tokudb_debug_behavior & TOKUDB_DEBUG_BEHAVIOR_REMEMBER_SECONDARY_KEY_POINT_QUERY) {
+            debug_last_secondary_key.data = debug_secondary_key_buff;
+            debug_last_secondary_key.size = found_key->size;
+            debug_last_secondary_key.ulen = max_key_length;
+            debug_last_secondary_key.flags = DB_DBT_USERMEM;
+            memcpy_fixed(debug_last_secondary_key.data, found_key->data, found_key->size);
+        }
     }
     //
     // else read from clustered/primary key
@@ -4812,9 +4833,11 @@ int ha_tokudb::read_full_row(uchar * buf) {
     if (error) {
         if (error == DB_LOCK_NOTGRANTED) {
             error = HA_ERR_LOCK_WAIT_TIMEOUT;
+        } else if (error == DB_NOTFOUND) {
+            error = HA_ERR_CRASHED;
         }
         table->status = STATUS_NOT_FOUND;
-        TOKUDB_DBUG_RETURN(error == DB_NOTFOUND ? HA_ERR_CRASHED : error);
+        TOKUDB_DBUG_RETURN(error);
     }
 
     TOKUDB_DBUG_RETURN(error);
@@ -5739,6 +5762,15 @@ cleanup:
     TOKUDB_DBUG_RETURN(error);
 }
 
+static char *dbt_to_string(DBT *dbt) {
+    char *result = (char*)my_malloc(dbt->size*2 + 1, MY_FAE|MY_WME|MY_ZEROFILL|MY_ALLOW_ZERO_PTR|MY_FREE_ON_ERROR);
+    for (uint i = 0; i < dbt->size; i++) {
+        int r = snprintf(&result[2*i], 3, "%02X", ((uchar*)dbt->data)[i]);
+        assert(r==2);
+    }
+    return result;
+}
+
 int ha_tokudb::prelock_range( const key_range *start_key, const key_range *end_key) {
     TOKUDB_DBUG_ENTER("ha_tokudb::prelock_range");
     THD* thd = ha_thd(); 
@@ -5783,11 +5815,46 @@ int ha_tokudb::prelock_range( const key_range *start_key, const key_range *end_k
         prelocked_right_range_size = 0;
     }
 
+
     error = cursor->c_pre_acquire_range_lock(
         cursor, 
         start_key ? &start_dbt_key : share->key_file[tokudb_active_index]->dbt_neg_infty(), 
         end_key ? &end_dbt_key : share->key_file[tokudb_active_index]->dbt_pos_infty()
         );
+    if (tokudb_debug_behavior & TOKUDB_DEBUG_BEHAVIOR_LOG_PRELOCKS) {
+        const myf mem_flags = MY_FAE|MY_WME|MY_ZEROFILL|MY_ALLOW_ZERO_PTR|MY_FREE_ON_ERROR;
+        char* start;
+        char* end;
+
+        if (start_key) {
+            start = dbt_to_string(&start_dbt_key);
+        }
+        if (end_key) {
+            end = dbt_to_string(&end_dbt_key);
+        }
+        const char *index_name;
+        if (tokudb_active_index == primary_key) {
+            index_name = "pk";
+        } else {
+            index_name = table->key_info[tokudb_active_index].name;
+        }
+        //TOKUDB_TRACE
+        printf("%s: LOG_PRELOCKS [%16" PRIX64 "] on [%.*s].[%s] locks [%s]<->[%s]\n", __FUNCTION__,
+                transaction->id64(transaction),
+                share->table_name_length,
+                share->table_name,
+                index_name,
+                start_key ? start : "-INFTY",
+                end_key   ? end   : "+INFTY");
+
+        if (start_key) {
+            my_free(start, mem_flags);
+        }
+        if (end_key) {
+            my_free(end, mem_flags);
+        }
+        fflush(stdout);
+    }
     if (error){ 
         last_cursor_error = error;
         //
