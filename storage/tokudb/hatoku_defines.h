@@ -219,8 +219,6 @@ extern ulong tokudb_debug_behavior;
 // tokudb behavior options
 #define TOKUDB_DEBUG_BEHAVIOR_DISABLE_PRELOCKING (1<<0)
 #define TOKUDB_DEBUG_BEHAVIOR_LOG_PRELOCKS (1<<1)
-#define TOKUDB_DEBUG_BEHAVIOR_REMEMBER_SECONDARY_KEY_POINT_QUERY (1<<2)
-
 #define TOKUDB_TRACE(f, ...) \
     printf("%d:%s:%d:" f, my_tid(), __FILE__, __LINE__, ##__VA_ARGS__);
 

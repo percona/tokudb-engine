@@ -1898,14 +1898,6 @@ int ha_tokudb::open(const char *name, int mode, uint test_if_locked) {
         ret_val = 1;
         goto exit;
     }
-    if (tokudb_debug_behavior & TOKUDB_DEBUG_BEHAVIOR_REMEMBER_SECONDARY_KEY_POINT_QUERY) {
-        debug_secondary_key_buff = (uchar*)my_malloc(max_key_length, MYF(MY_WME));
-        if (debug_secondary_key_buff == NULL) {
-            ret_val = 1;
-            goto exit;
-        }
-    }
-
 
     size_range_query_buff = get_tokudb_read_buf_size(thd);
     range_query_buff = (uchar *)my_malloc(size_range_query_buff, MYF(MY_WME));
@@ -1985,8 +1977,6 @@ exit:
         rec_buff = NULL;
         my_free(rec_update_buff, MYF(MY_ALLOW_ZERO_PTR));
         rec_update_buff = NULL;
-        my_free(debug_secondary_key_buff, MYF(MY_ALLOW_ZERO_PTR));
-        debug_secondary_key_buff = NULL;
         
         if (error) {
             my_errno = error;
@@ -2267,7 +2257,6 @@ int ha_tokudb::__close() {
     my_free(rec_update_buff, MYF(MY_ALLOW_ZERO_PTR));
     my_free(blob_buff, MYF(MY_ALLOW_ZERO_PTR));
     my_free(alloc_ptr, MYF(MY_ALLOW_ZERO_PTR));
-    my_free(debug_secondary_key_buff, MYF(MY_ALLOW_ZERO_PTR));
     my_free(range_query_buff, MYF(MY_ALLOW_ZERO_PTR));
     for (uint32_t i = 0; i < sizeof(mult_rec_dbt)/sizeof(mult_rec_dbt[0]); i++) {
         if (mult_rec_dbt[i].flags == DB_DBT_REALLOC &&
@@ -4626,7 +4615,6 @@ int ha_tokudb::index_init(uint keynr, bool sorted) {
         goto exit;
     }
     memset((void *) &last_key, 0, sizeof(last_key));
-    memset((void *) &debug_last_secondary_key, 0, sizeof(debug_last_secondary_key));
 
     if (thd_sql_command(thd) == SQLCOM_SELECT) {
         set_query_columns(keynr);
@@ -4781,13 +4769,6 @@ int ha_tokudb::read_primary_key(uchar * buf, uint keynr, DBT const *row, DBT con
             buf,
             &has_null
             );
-        if (tokudb_debug_behavior & TOKUDB_DEBUG_BEHAVIOR_REMEMBER_SECONDARY_KEY_POINT_QUERY) {
-            debug_last_secondary_key.data = debug_secondary_key_buff;
-            debug_last_secondary_key.size = found_key->size;
-            debug_last_secondary_key.ulen = max_key_length;
-            debug_last_secondary_key.flags = DB_DBT_USERMEM;
-            memcpy_fixed(debug_last_secondary_key.data, found_key->data, found_key->size);
-        }
     }
     //
     // else read from clustered/primary key
