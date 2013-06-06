@@ -4686,6 +4686,7 @@ int ha_tokudb::handle_cursor_error(int error, int err_to_return, uint keynr) {
 // was
 //
 void ha_tokudb::extract_hidden_primary_key(uint keynr, DBT const *found_key) {
+#error TODO call unpack_key into buf like in read_primary_key
     //
     // extract hidden primary key to current_ident
     //
@@ -4815,10 +4816,17 @@ int ha_tokudb::read_full_row(uchar * buf) {
         if (error == DB_LOCK_NOTGRANTED) {
             error = HA_ERR_LOCK_WAIT_TIMEOUT;
         } else if (error == DB_NOTFOUND) {
-            error = HA_ERR_CRASHED;
+            if (TODO_IS_SERIALIZABLE() && OUT_OF_RANGE()) {
+                //TODO: need to check OUT_OF_RANGE from original secondary key.. NOT SAVED??
+                //TODO: Do nothing
+#error do here Will use 'buf'  Add comments.. buf has not been overwritten. WHICH BUF IS IT???
+#error trace the 'buf' from read_primary_key
+#error something like tokudb_compare_two_keys tokudb_cmp_dbt_key 
+            } else {
+                error = HA_ERR_CRASHED;
+            }
         }
         table->status = STATUS_NOT_FOUND;
-        TOKUDB_DBUG_RETURN(error);
     }
 
     TOKUDB_DBUG_RETURN(error);
