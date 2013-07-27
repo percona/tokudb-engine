@@ -2460,12 +2460,14 @@ int ha_tokudb::unpack_blobs(
             false;
         Field* field = table->field[curr_field_index];
         uint32_t len_bytes = field->row_pack_length();
-        buff = unpack_toku_field_blob(
+        const uchar *end_buff = unpack_toku_field_blob(
             record + field_offset(field, table),
             buff,
             len_bytes,
             skip
             );
+        assert(blob_buff <= buff && end_buff <= blob_buff + num_bytes);
+        buff = end_buff;
     }
 
     error = 0;
