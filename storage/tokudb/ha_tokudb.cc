@@ -2466,13 +2466,19 @@ int ha_tokudb::unpack_blobs(
             len_bytes,
             skip
             );
-        assert(blob_buff <= buff && end_buff <= blob_buff + num_bytes);
+        if (!(blob_buff <= buff && end_buff <= blob_buff + num_bytes)) {
+            error = -(3000000 + i);
+            goto exit;
+        }
         buff = end_buff;
     }
     if (share->kc_info.num_blobs == 0) {
         assert(num_bytes == 0);
     } else {
-        assert(num_bytes > 0 && buff == blob_buff + num_bytes);
+        if (!(num_bytes > 0 && buff == blob_buff + num_bytes)) {
+            error = -4000000;
+            goto exit;
+        }
     }
     error = 0;
 exit:
