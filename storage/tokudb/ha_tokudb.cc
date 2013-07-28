@@ -2479,6 +2479,27 @@ exit:
     return error;
 }
 
+static uint get_var_offset(uint i, const uchar* var_offsets, uint num_offset_bytes) {
+    switch (num_offset_bytes) {
+    case 1:
+        return *(var_offsets + i);
+    case 2:
+        return uint2korr(var_offsets + 2*i);
+    default:
+        assert(0);
+        return 0;
+    }
+}
+
+static void verify_var_offsets(const uchar *var_offsets, uint len_of_offsets, uint num_offset_bytes) {
+    uint num_var_fields = len_of_offsets / num_offset_bytes;
+    for (uint i = 1; i < num_var_fields; i++) {
+        uint prev_offset = get_var_offset(i-1, var_offsets, num_offset_bytes);
+        uint offset = get_var_offset(i, var_offsets, num_offset_bytes);
+        assert(prev_offset <= offset);
+    }
+}
+
 //
 // take the row passed in as a DBT*, and convert it into a row in MySQL format in record
 // Parameters:
@@ -2507,6 +2528,9 @@ int ha_tokudb::unpack_row(
 
     var_field_offset_ptr = fixed_field_ptr + share->kc_info.mcp_info[index].fixed_field_size;
     var_field_data_ptr = var_field_offset_ptr + share->kc_info.mcp_info[index].len_of_offsets;
+    
+    assert((uchar*)row->data <= var_field_offset_ptr && var_field_data_ptr <= (uchar*)row->data + row->size);
+    verify_var_offsets(var_field_offset_ptr, share->kc_info.mcp_info[index].len_of_offsets, share->kc_info.num_offset_bytes);
 
     //
     // unpack the key, if necessary
