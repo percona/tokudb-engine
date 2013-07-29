@@ -2467,7 +2467,7 @@ int ha_tokudb::unpack_blobs(
             skip
             );
         if (!(blob_buff <= buff && end_buff <= blob_buff + num_bytes)) {
-            error = -(3000000 + i);
+            error = fixup_blobs(record, from_tokudb_blob, num_bytes, check_bitmap);
             goto exit;
         }
         buff = end_buff;
@@ -2477,6 +2477,68 @@ int ha_tokudb::unpack_blobs(
     } else {
         if (!(num_bytes > 0 && buff == blob_buff + num_bytes)) {
             error = -4000000;
+            goto exit;
+        }
+    }
+    error = 0;
+exit:
+    return error;
+}
+
+int ha_tokudb::fixup_blobs(
+    uchar* record,
+    const uchar* from_tokudb_blob,
+    uint32_t num_bytes,
+    bool check_bitmap
+    )
+{
+    uint error = 0;
+    uchar* ptr = NULL;
+    const uchar* buff = NULL;
+
+    num_bytes += 1;
+
+    // assert that num_bytes > 0 iff share->num_blobs > 0
+    assert( !((share->kc_info.num_blobs == 0) && (num_bytes > 0)) );
+    if (num_bytes > num_blob_bytes) {
+        ptr = (uchar *)my_realloc((void *)blob_buff, num_bytes, MYF(MY_ALLOW_ZERO_PTR));
+        if (ptr == NULL) {
+            error = ENOMEM;
+            goto exit;
+        }
+        blob_buff = ptr;
+        num_blob_bytes = num_bytes;
+    }
+
+    memcpy(blob_buff+2, from_tokudb_blob+1, num_bytes-1-1);
+    blob_buff[0] = from_tokudb_blob[0];
+    blob_buff[1] = 0;
+    buff= blob_buff;
+    for (uint i = 0; i < share->kc_info.num_blobs; i++) {
+        uint32_t curr_field_index = share->kc_info.blob_fields[i]; 
+        bool skip = check_bitmap ? 
+            !(bitmap_is_set(table->read_set,curr_field_index) || 
+                bitmap_is_set(table->write_set,curr_field_index)) : 
+            false;
+        Field* field = table->field[curr_field_index];
+        uint32_t len_bytes = field->row_pack_length();
+        const uchar *end_buff = unpack_toku_field_blob(
+            record + field_offset(field, table),
+            buff,
+            len_bytes,
+            skip
+            );
+        if (!(blob_buff <= buff && end_buff <= blob_buff + num_bytes)) {
+            error = -5000000;
+            goto exit;
+        }
+        buff = end_buff;
+    }
+    if (share->kc_info.num_blobs == 0) {
+        assert(num_bytes == 0);
+    } else {
+        if (!(num_bytes > 0 && buff == blob_buff + num_bytes)) {
+            error = -6000000;
             goto exit;
         }
     }

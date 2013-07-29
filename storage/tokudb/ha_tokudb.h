@@ -713,6 +713,14 @@ public:
         uint32_t num_blob_bytes,
         bool check_bitmap
         );
+private:
+    int fixup_blobs(
+        uchar* record,
+        const uchar* from_tokudb_blob,
+        uint32_t num_blob_bytes,
+        bool check_bitmap
+        );
+public:
     int unpack_row(
         uchar* record, 
         DBT const *row, 
