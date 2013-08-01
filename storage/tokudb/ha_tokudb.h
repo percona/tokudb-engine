@@ -720,6 +720,8 @@ private:
         uint32_t num_blob_bytes,
         bool check_bitmap
         );
+    void fixup_blobs_during_copy(uchar *dest_buff, uint dest_buff_size, const uchar *src_buff, uint src_buff_size,
+                                 uint bad_blob_index, uint old_blob_size, uint new_blob_size);
 public:
     int unpack_row(
         uchar* record, 

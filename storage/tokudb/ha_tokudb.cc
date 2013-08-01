@@ -2485,6 +2485,46 @@ exit:
     return error;
 }
 
+void ha_tokudb::fixup_blobs_during_copy(uchar *dest_buff, uint dest_buff_size, const uchar *src_buff, uint src_buff_size,
+                                        uint bad_blob_index, uint old_blob_size, uint new_blob_size) {
+#if 0
+    // tinytext -> text conversion for the test_mailing_lists table
+    assert(bad_blob_index == 0 && old_blob_size == 1 && new_blob_size == 2);
+    memcpy(dest_buff+2, src_buff+1, src_buff_size-1-1);
+    dest_buff[0] = src_buff[0];
+    dest_buff[1] = 0;
+#else
+    assert(old_blob_size < new_blob_size);
+    assert(bad_blob_index < share->kc_info.num_blobs);
+    uchar *next_dest_ptr = dest_buff;
+    const uchar *next_src_ptr = src_buff;
+    for (uint i = 0; i < share->kc_info.num_blobs; i++) {
+        uint32_t curr_field_index = share->kc_info.blob_fields[i]; 
+        Field* field = table->field[curr_field_index];
+        uint32_t blob_length_size = field->row_pack_length();
+        uint32_t blob_data_size;
+        if (i == bad_blob_index) {
+            assert(new_blob_size == blob_length_size);
+            blob_data_size = get_blob_field_len(next_src_ptr, old_blob_size);
+            memset(next_dest_ptr, 0, new_blob_size);
+            memcpy(next_dest_ptr, next_src_ptr, old_blob_size);
+            next_dest_ptr += new_blob_size;
+            next_src_ptr += old_blob_size;
+        } else {
+            blob_data_size = get_blob_field_len(next_src_ptr, blob_length_size);
+            memcpy(next_dest_ptr, next_src_ptr, blob_length_size);
+            next_dest_ptr += blob_length_size;
+            next_src_ptr += blob_length_size;
+        }
+        assert(next_dest_ptr + blob_data_size <= dest_buff + dest_buff_size);
+        assert(next_src_ptr + blob_data_size <= src_buff + src_buff_size);
+        memcpy(next_dest_ptr, next_src_ptr, blob_data_size);
+        next_dest_ptr += blob_data_size;
+        next_src_ptr += blob_data_size;
+    }
+#endif
+}
+
 int ha_tokudb::fixup_blobs(
     uchar* record,
     const uchar* from_tokudb_blob,
@@ -2496,7 +2536,11 @@ int ha_tokudb::fixup_blobs(
     uchar* ptr = NULL;
     const uchar* buff = NULL;
 
-    num_bytes += 1;
+    uint old_blob_size = 1;
+    uint new_blob_size = 2;
+    uint delta_blob_size = new_blob_size - old_blob_size;
+    uint bad_blob_index = 0;
+    num_bytes += delta_blob_size;
 
     // assert that num_bytes > 0 iff share->num_blobs > 0
     assert( !((share->kc_info.num_blobs == 0) && (num_bytes > 0)) );
@@ -2510,9 +2554,7 @@ int ha_tokudb::fixup_blobs(
         num_blob_bytes = num_bytes;
     }
 
-    memcpy(blob_buff+2, from_tokudb_blob+1, num_bytes-1-1);
-    blob_buff[0] = from_tokudb_blob[0];
-    blob_buff[1] = 0;
+    fixup_blobs_during_copy(blob_buff, num_bytes, from_tokudb_blob, num_bytes - delta_blob_size, bad_blob_index, old_blob_size, new_blob_size);
     buff= blob_buff;
     for (uint i = 0; i < share->kc_info.num_blobs; i++) {
         uint32_t curr_field_index = share->kc_info.blob_fields[i]; 
