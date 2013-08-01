@@ -2536,10 +2536,10 @@ int ha_tokudb::fixup_blobs(
     uchar* ptr = NULL;
     const uchar* buff = NULL;
 
-    uint old_blob_size = 1;
-    uint new_blob_size = 2;
+    uint old_blob_size = 2;
+    uint new_blob_size = 4;
     uint delta_blob_size = new_blob_size - old_blob_size;
-    uint bad_blob_index = 0;
+    uint bad_blob_index = 4;
     num_bytes += delta_blob_size;
 
     // assert that num_bytes > 0 iff share->num_blobs > 0
