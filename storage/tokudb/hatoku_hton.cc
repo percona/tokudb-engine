@@ -255,6 +255,16 @@ static MYSQL_THDVAR_UINT(analyze_time,
     1      // blocksize???
 );
 
+#if TOKU_INCLUDE_XA
+static MYSQL_THDVAR_BOOL(support_xa,
+    PLUGIN_VAR_OPCMDARG,
+    "Enable TokuDB support for the XA two-phase commit",
+    NULL, // check
+    NULL, // update
+    TRUE  // default
+);
+#endif
+
 static void tokudb_checkpoint_lock(THD * thd);
 static void tokudb_checkpoint_unlock(THD * thd);
 
@@ -847,6 +857,12 @@ uint get_analyze_time(THD *thd) {
     return THDVAR(thd, analyze_time);
 }
 
+#if TOKU_INCLUDE_XA
+bool get_support_xa(THD *thd) {
+    return THDVAR(thd, support_xa);
+}
+#endif
+
 typedef struct txn_progress_info {
     char status[200];
     THD* thd;
@@ -976,8 +992,11 @@ static int tokudb_rollback(handlerton * hton, THD * thd, bool all) {
 }
 
 #if TOKU_INCLUDE_XA
-
 static int tokudb_xa_prepare(handlerton* hton, THD* thd, bool all) {
+    if (!THDVAR(thd, support_xa)) {
+        return (0);
+    }
+
     TOKUDB_DBUG_ENTER("tokudb_xa_prepare");
     int r = 0;
     DBUG_PRINT("trans", ("preparing transaction %s", all ? "all" : "stmt"));
@@ -2047,6 +2066,7 @@ static struct st_mysql_sys_var *tokudb_system_variables[] = {
     MYSQL_SYSVAR(disable_slow_upsert),
 #endif
     MYSQL_SYSVAR(analyze_time),
+    MYSQL_SYSVAR(support_xa),
     MYSQL_SYSVAR(fsync_log_period),
     MYSQL_SYSVAR(gdb_path),
     MYSQL_SYSVAR(gdb_on_fatal),
