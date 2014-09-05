@@ -1442,6 +1442,8 @@ static struct st_mysql_sys_var *tokudb_system_variables[] = {
 #if TOKU_INCLUDE_XA
     MYSQL_SYSVAR(support_xa),
 #endif
+    MYSQL_SYSVAR(rpl_unique_checks),
+    MYSQL_SYSVAR(rpl_unique_checks_delay),
     NULL
 };
 
