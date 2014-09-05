@@ -1433,6 +1433,8 @@ static struct st_mysql_sys_var *tokudb_system_variables[] = {
     MYSQL_SYSVAR(check_jemalloc),
 #endif
     MYSQL_SYSVAR(bulk_fetch),
+    MYSQL_SYSVAR(rpl_unique_checks),
+    MYSQL_SYSVAR(rpl_unique_checks_delay),
     NULL
 };
 
