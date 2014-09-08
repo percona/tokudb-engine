@@ -1249,6 +1249,7 @@ ha_tokudb::ha_tokudb(handlerton * hton, TABLE_SHARE * table_arg):handler(hton, t
     tokudb_active_index = MAX_KEY;
     invalidate_icp();
     trx_handler_list.data = this;
+    rpl_write_rows = false;
     TOKUDB_HANDLER_DBUG_VOID_RETURN;
 }
 
@@ -3558,8 +3559,8 @@ static void maybe_do_unique_checks_delay(THD *thd) {
     }
 }
 
-static bool do_unique_checks(THD *thd) {
-    if (thd->slave_thread && opt_readonly && !THDVAR(thd, rpl_unique_checks))
+static bool do_unique_checks(THD *thd, bool do_rpl_event) {
+    if (do_rpl_event && thd->slave_thread && opt_readonly && !THDVAR(thd, rpl_unique_checks))
         return false;
     else
         return !thd_test_options(thd, OPTION_RELAXED_UNIQUE_CHECKS);
@@ -3570,7 +3571,7 @@ int ha_tokudb::do_uniqueness_checks(uchar* record, DB_TXN* txn, THD* thd) {
     //
     // first do uniqueness checks
     //
-    if (share->has_unique_keys && do_unique_checks(thd)) {
+    if (share->has_unique_keys && do_unique_checks(thd, rpl_write_rows)) {
         for (uint keynr = 0; keynr < table_share->keys; keynr++) {
             bool is_unique_key = (table->key_info[keynr].flags & HA_NOSAME) || (keynr == primary_key);
             bool is_unique = false;
@@ -3704,15 +3705,8 @@ void ha_tokudb::test_row_packing(uchar* record, DBT* pk_key, DBT* pk_val) {
     tokudb_my_free(tmp_pk_val_data);
 }
 
-//
 // set the put flags for the main dictionary
-//
-void ha_tokudb::set_main_dict_put_flags(
-    THD* thd, 
-    bool opt_eligible,
-    uint32_t* put_flags
-    ) 
-{
+void ha_tokudb::set_main_dict_put_flags(THD* thd, bool opt_eligible, uint32_t* put_flags) {
     uint32_t old_prelock_flags = 0;
     uint curr_num_DBs = table->s->keys + tokudb_test(hidden_primary_key);
     bool in_hot_index = share->num_DBs > curr_num_DBs;
@@ -3732,7 +3726,7 @@ void ha_tokudb::set_main_dict_put_flags(
     {
         *put_flags = old_prelock_flags;
     }
-    else if (do_unique_checks(thd) && !is_replace_into(thd) && !is_insert_ignore(thd))
+    else if (!do_unique_checks(thd, rpl_write_rows) && !is_replace_into(thd) && !is_insert_ignore(thd))
     {
         *put_flags = old_prelock_flags;
     }
@@ -8180,6 +8174,14 @@ void ha_tokudb::add_to_trx_handler_list() {
 void ha_tokudb::remove_from_trx_handler_list() {
     tokudb_trx_data *trx = (tokudb_trx_data *) thd_get_ha_data(ha_thd(), tokudb_hton);
     trx->handlers = list_delete(trx->handlers, &trx_handler_list);
+}
+
+void ha_tokudb::rpl_before_write_rows() {
+    rpl_write_rows = true;
+}
+
+void ha_tokudb::rpl_after_write_rows() {
+    rpl_write_rows = false;
 }
 
 // table admin 
