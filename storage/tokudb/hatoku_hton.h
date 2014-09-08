@@ -534,6 +534,13 @@ static MYSQL_THDVAR_BOOL(rpl_unique_checks, PLUGIN_VAR_THDLOCAL, "enable unique 
 static MYSQL_THDVAR_ULONGLONG(rpl_unique_checks_delay, PLUGIN_VAR_THDLOCAL, "time in milliseconds to add to unique checks test on replication slave", 
                               NULL, NULL, 0 /*default*/, 0 /*min*/, ~0ULL /*max*/, 1 /*blocksize*/);
 
+static MYSQL_THDVAR_BOOL(rpl_lookup_rows, PLUGIN_VAR_THDLOCAL, "lookup a row on rpl slave", 
+                         NULL /*check*/, NULL /*update*/, true /*default*/);
+
+static MYSQL_THDVAR_ULONGLONG(rpl_lookup_rows_delay, PLUGIN_VAR_THDLOCAL, "time in milliseconds to add to lookups on replication slave", 
+                              NULL, NULL, 0 /*default*/, 0 /*min*/, ~0ULL /*max*/, 1 /*blocksize*/);
+
+
 extern HASH tokudb_open_tables;
 extern pthread_mutex_t tokudb_mutex;
 extern uint32_t tokudb_write_status_frequency;

@@ -1249,7 +1249,7 @@ ha_tokudb::ha_tokudb(handlerton * hton, TABLE_SHARE * table_arg):handler(hton, t
     tokudb_active_index = MAX_KEY;
     invalidate_icp();
     trx_handler_list.data = this;
-    rpl_write_rows = false;
+    in_rpl_write_rows = in_rpl_delete_rows = in_rpl_update_rows = false;
     TOKUDB_HANDLER_DBUG_VOID_RETURN;
 }
 
@@ -3571,7 +3571,7 @@ int ha_tokudb::do_uniqueness_checks(uchar* record, DB_TXN* txn, THD* thd) {
     //
     // first do uniqueness checks
     //
-    if (share->has_unique_keys && do_unique_checks(thd, rpl_write_rows)) {
+    if (share->has_unique_keys && do_unique_checks(thd, in_rpl_write_rows)) {
         for (uint keynr = 0; keynr < table_share->keys; keynr++) {
             bool is_unique_key = (table->key_info[keynr].flags & HA_NOSAME) || (keynr == primary_key);
             bool is_unique = false;
@@ -3726,7 +3726,7 @@ void ha_tokudb::set_main_dict_put_flags(THD* thd, bool opt_eligible, uint32_t* p
     {
         *put_flags = old_prelock_flags;
     }
-    else if (!do_unique_checks(thd, rpl_write_rows) && !is_replace_into(thd) && !is_insert_ignore(thd))
+    else if (!do_unique_checks(thd, in_rpl_write_rows) && !is_replace_into(thd) && !is_insert_ignore(thd))
     {
         *put_flags = old_prelock_flags;
     }
@@ -5625,13 +5625,11 @@ DBT *ha_tokudb::get_pos(DBT * to, uchar * pos) {
     DBUG_RETURN(to);
 }
 
-//
 // Retrieves a row with based on the primary key saved in pos
 // Returns:
 //      0 on success
 //      HA_ERR_KEY_NOT_FOUND if not found
 //      error otherwise
-//
 int ha_tokudb::rnd_pos(uchar * buf, uchar * pos) {
     TOKUDB_HANDLER_DBUG_ENTER("");
     DBT db_pos;
@@ -5644,12 +5642,20 @@ int ha_tokudb::rnd_pos(uchar * buf, uchar * pos) {
     ha_statistic_increment(&SSV::ha_read_rnd_count);
     tokudb_active_index = MAX_KEY;
 
+    // test rpl slave by inducing a delay before the point query
+    THD *thd = ha_thd();
+    if (thd->slave_thread && (in_rpl_delete_rows || in_rpl_update_rows)) {
+        uint64_t delay_ms = THDVAR(thd, rpl_lookup_rows_delay);
+        if (delay_ms)
+            usleep(delay_ms * 1000);
+    }
+
     info.ha = this;
     info.buf = buf;
     info.keynr = primary_key;
 
     error = share->file->getf_set(share->file, transaction, 
-            get_cursor_isolation_flags(lock.type, ha_thd()), 
+            get_cursor_isolation_flags(lock.type, thd), 
             key, smart_dbt_callback_rowread_ptquery, &info);
 
     if (error == DB_NOTFOUND) {
@@ -8177,12 +8183,36 @@ void ha_tokudb::remove_from_trx_handler_list() {
 }
 
 void ha_tokudb::rpl_before_write_rows() {
-    rpl_write_rows = true;
+    in_rpl_write_rows = true;
 }
 
 void ha_tokudb::rpl_after_write_rows() {
-    rpl_write_rows = false;
+    in_rpl_write_rows = false;
 }
+
+void ha_tokudb::rpl_before_delete_rows() {
+    in_rpl_delete_rows = true;
+}
+
+void ha_tokudb::rpl_after_delete_rows() {
+    in_rpl_delete_rows = false;
+}
+
+void ha_tokudb::rpl_before_update_rows() {
+    in_rpl_update_rows = true;
+}
+
+void ha_tokudb::rpl_after_update_rows() {
+    in_rpl_update_rows = false;
+}
+
+bool ha_tokudb::rpl_lookup_rows() {
+    if (!in_rpl_delete_rows && !in_rpl_update_rows)
+        return true;
+    else
+        return THDVAR(ha_thd(), rpl_lookup_rows);
+}
+
 
 // table admin 
 #include "ha_tokudb_admin.cc"
