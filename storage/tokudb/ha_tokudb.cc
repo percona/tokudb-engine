@@ -3726,7 +3726,7 @@ void ha_tokudb::set_main_dict_put_flags(THD* thd, bool opt_eligible, uint32_t* p
     {
         *put_flags = old_prelock_flags;
     }
-    else if (!do_unique_checks(thd, in_rpl_write_rows) && !is_replace_into(thd) && !is_insert_ignore(thd))
+    else if (!do_unique_checks(thd, in_rpl_write_rows | in_rpl_update_rows) && !is_replace_into(thd) && !is_insert_ignore(thd))
     {
         *put_flags = old_prelock_flags;
     }
@@ -4051,7 +4051,6 @@ int ha_tokudb::update_row(const uchar * old_row, uchar * new_row) {
     memset((void *) &prim_row, 0, sizeof(prim_row));
     memset((void *) &old_prim_row, 0, sizeof(old_prim_row));
 
-
     ha_statistic_increment(&SSV::ha_update_count);
 #if MYSQL_VERSION_ID < 50600
     if (table->timestamp_field_type & TIMESTAMP_AUTO_SET_ON_UPDATE) {
@@ -4098,7 +4097,6 @@ int ha_tokudb::update_row(const uchar * old_row, uchar * new_row) {
     }
     txn = using_ignore ? sub_trans : transaction;
 
-
     if (hidden_primary_key) {
         memset((void *) &prim_key, 0, sizeof(prim_key));
         prim_key.data = (void *) current_ident;
@@ -4110,10 +4108,8 @@ int ha_tokudb::update_row(const uchar * old_row, uchar * new_row) {
         create_dbt_key_from_table(&old_prim_key, primary_key, primary_key_buff, old_row, &has_null);
     }
 
-    //
     // do uniqueness checks
-    //
-    if (share->has_unique_keys && !thd_test_options(thd, OPTION_RELAXED_UNIQUE_CHECKS)) {
+    if (share->has_unique_keys && do_unique_checks(thd, in_rpl_update_rows)) {
         for (uint keynr = 0; keynr < table_share->keys; keynr++) {
             bool is_unique_key = (table->key_info[keynr].flags & HA_NOSAME) || (keynr == primary_key);
             if (keynr == primary_key && !share->pk_has_string) {
@@ -4153,6 +4149,10 @@ int ha_tokudb::update_row(const uchar * old_row, uchar * new_row) {
     if (error) { goto cleanup; }
 
     set_main_dict_put_flags(thd, false, &mult_put_flags[primary_key]);
+
+    // for test, make unique checks have a very long duration
+    if ((mult_put_flags[primary_key] & DB_OPFLAGS_MASK) == DB_NOOVERWRITE)
+        maybe_do_unique_checks_delay(thd);
 
     error = db_env->update_multiple(
         db_env, 
