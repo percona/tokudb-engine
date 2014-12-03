@@ -104,7 +104,8 @@ enum srv_row_format_enum {
     SRV_ROW_FORMAT_LZMA = 3,
     SRV_ROW_FORMAT_FAST = 4,
     SRV_ROW_FORMAT_SMALL = 5,
-    SRV_ROW_FORMAT_DEFAULT = 6
+    SRV_ROW_FORMAT_DEFAULT = 6,
+    SRV_ROW_FORMAT_SNAPPY = 7,
 };
 typedef enum srv_row_format_enum srv_row_format_t;
 
@@ -125,6 +126,8 @@ static inline srv_row_format_t toku_compression_method_to_row_format(toku_compre
         return SRV_ROW_FORMAT_FAST;
     case TOKU_SMALL_COMPRESSION_METHOD:
         return SRV_ROW_FORMAT_SMALL;
+    case TOKU_SNAPPY_METHOD:
+        return SRV_ROW_FORMAT_SNAPPY;
     default:
         assert(0);
     }
@@ -143,6 +146,8 @@ static inline toku_compression_method row_format_to_toku_compression_method(srv_
     case SRV_ROW_FORMAT_LZMA:
     case SRV_ROW_FORMAT_SMALL:
         return TOKU_LZMA_METHOD;
+    case SRV_ROW_FORMAT_SNAPPY:
+        return TOKU_SNAPPY_METHOD;
     default:
         assert(0);
     }
@@ -165,6 +170,8 @@ static inline enum row_type row_format_to_row_type(srv_row_format_t row_format) 
         return ROW_TYPE_TOKU_FAST;
     case SRV_ROW_FORMAT_DEFAULT:
         return ROW_TYPE_DEFAULT;
+    case SRV_ROW_FORMAT_SNAPPY:
+        return ROW_TYPE_TOKU_SNAPPY;
     }
 #endif
     return ROW_TYPE_DEFAULT;
@@ -187,6 +194,8 @@ static inline srv_row_format_t row_type_to_row_format(enum row_type type) {
         return SRV_ROW_FORMAT_FAST;
     case ROW_TYPE_DEFAULT:
         return SRV_ROW_FORMAT_DEFAULT;
+    case ROW_TYPE_TOKU_SNAPPY:
+        return SRV_ROW_FORMAT_SNAPPY;
     default:
         return SRV_ROW_FORMAT_DEFAULT;
     }
@@ -416,6 +425,7 @@ static const char *tokudb_row_format_names[] = {
     "tokudb_fast",
     "tokudb_small",
     "tokudb_default",
+    "tokudb_snappy",
     NullS
 };
 
@@ -429,7 +439,7 @@ static TYPELIB tokudb_row_format_typelib = {
 static MYSQL_THDVAR_ENUM(row_format, PLUGIN_VAR_OPCMDARG,
                          "Specifies the compression method for a table during this session. "
                          "Possible values are TOKUDB_UNCOMPRESSED, TOKUDB_ZLIB, TOKUDB_QUICKLZ, "
-                         "TOKUDB_LZMA, TOKUDB_FAST, TOKUDB_SMALL and TOKUDB_DEFAULT",
+                         "TOKUDB_LZMA, TOKUDB_FAST, TOKUDB_SMALL, TOKUDB_DEFAULT, TOKUDB_SNAPPY",
                          NULL, NULL, SRV_ROW_FORMAT_ZLIB, &tokudb_row_format_typelib);
 
 static inline srv_row_format_t get_row_format(THD *thd) {
