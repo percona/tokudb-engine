@@ -556,7 +556,7 @@ static void tokudb_verify_ftnode_update(
     my_ulonglong* val = (my_ulonglong *) var_ptr;
     *val= *(my_ulonglong *) save;
     if (db_env)
-        db_env->set_node_verify(db_env, *val);
+        db_env->set_ftnode_verify_flags(db_env, *val);
 }
 
 static ulonglong tokudb_do_verify_ftnode = 0;
