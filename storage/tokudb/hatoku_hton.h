@@ -547,6 +547,23 @@ static MYSQL_THDVAR_DOUBLE(optimize_index_fraction, 0, "optimize index fraction 
 
 static MYSQL_THDVAR_ULONGLONG(optimize_throttle, 0, "optimize throttle (default no throttle)", NULL /*check*/, NULL /*update*/, 0 /*def*/, 0 /*min*/, ~0ULL /*max*/, 1);
 
+static void tokudb_verify_ftnode_update(
+    THD* thd,
+    struct st_mysql_sys_var* var,
+    void* var_ptr,
+    const void* save) 
+{
+    my_ulonglong* val = (my_ulonglong *) var_ptr;
+    *val= *(my_ulonglong *) save;
+    if (db_env)
+        db_env->set_node_verify(db_env, *val);
+}
+
+static ulonglong tokudb_do_verify_ftnode = 0;
+static MYSQL_SYSVAR_ULONGLONG(verify_ftnode, tokudb_do_verify_ftnode, 0, "verify ftnode on write", 
+                              NULL /*check*/, tokudb_verify_ftnode_update /*update*/, 7 /*def*/, 0 /*min*/, ~0ULL /*max*/, 0);
+
+
 extern HASH tokudb_open_tables;
 extern pthread_mutex_t tokudb_mutex;
 extern uint32_t tokudb_write_status_frequency;

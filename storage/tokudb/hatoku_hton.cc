@@ -538,6 +538,7 @@ static int tokudb_init_func(void *p) {
     db_env->change_fsync_log_period(db_env, tokudb_fsync_log_period);
     db_env->set_lock_timeout_callback(db_env, tokudb_lock_timeout_callback);
     db_env->set_loader_memory_size(db_env, tokudb_get_loader_memory_size_callback);
+    db_env->set_node_verify(db_env, tokudb_do_verify_ftnode);
 
     r = db_env->open(db_env, tokudb_home, tokudb_init_flags, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
 
@@ -1490,6 +1491,7 @@ static struct st_mysql_sys_var *tokudb_system_variables[] = {
     MYSQL_SYSVAR(optimize_index_name),
     MYSQL_SYSVAR(optimize_index_fraction),
     MYSQL_SYSVAR(optimize_throttle),
+    MYSQL_SYSVAR(verify_ftnode),
     NULL
 };
 
