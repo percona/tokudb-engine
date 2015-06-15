@@ -149,7 +149,7 @@ public:
     // key is hidden
     //
     DB *key_file[MAX_KEY +1];
-    rw_lock_t key_file_lock;
+    tokudb_rw_lock_t key_file_lock;
     uint status, version, capabilities;
     uint ref_length;
     //
@@ -177,7 +177,7 @@ public:
 
     bool has_unique_keys;
     bool replace_into_fast;
-    rw_lock_t num_DBs_lock;
+    tokudb_rw_lock_t num_DBs_lock;
     uint32_t num_DBs;
 
     pthread_cond_t m_openclose_cond;
@@ -605,10 +605,10 @@ public:
     int get_status(DB_TXN* trans);
     void init_hidden_prim_key_info(DB_TXN *txn);
     inline void get_auto_primary_key(uchar * to) {
-        tokudb_pthread_mutex_lock(&share->mutex);
+        tokudb_mutex_lock(&share->mutex);
         share->auto_ident++;
         hpk_num_to_char(to, share->auto_ident);
-        tokudb_pthread_mutex_unlock(&share->mutex);
+        tokudb_mutex_unlock(&share->mutex);
     }
     virtual void get_auto_increment(ulonglong offset, ulonglong increment, ulonglong nb_desired_values, ulonglong * first_value, ulonglong * nb_reserved_values);
     bool is_optimize_blocking();
@@ -617,7 +617,7 @@ public:
     uint8 table_cache_type() {
         return HA_CACHE_TBL_TRANSACT;
     }
-    bool primary_key_is_clustered() {
+    bool primary_key_is_clustered() const {
         return true;
     }
     bool supports_clustered_keys() {
