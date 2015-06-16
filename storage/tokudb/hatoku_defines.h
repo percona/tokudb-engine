@@ -548,7 +548,7 @@ static inline void tokudb_cond_init(tokudb_cond_t *cond) {
 #if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
     int r = native_cond_init(cond);
 #else
-    int r = pthread_cond_init(cond);
+    int r = pthread_cond_init(cond, NULL);
 #endif
     assert(r == 0);
 }
@@ -566,7 +566,7 @@ static inline void tokudb_cond_wait(tokudb_cond_t *cond, tokudb_mutex_t *mutex) 
 #if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
     int r = native_cond_wait(cond, mutex);
 #else
-    int r = pthread_cond_wait(cond);
+    int r = pthread_cond_wait(cond, mutex);
 #endif
     assert(r == 0);
 }
@@ -605,7 +605,7 @@ static inline void tokudb_rw_init(tokudb_rw_lock_t *rwlock) {
 #if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
     int r = native_rw_init(rwlock);
 #else
-    int r = my_rw_lock_init(rwlock, 0);
+    int r = my_rwlock_init(rwlock, 0);
 #endif
     assert(r == 0);
 }

@@ -617,7 +617,11 @@ public:
     uint8 table_cache_type() {
         return HA_CACHE_TBL_TRANSACT;
     }
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
     bool primary_key_is_clustered() const {
+#else
+    bool primary_key_is_clustered() {
+#endif
         return true;
     }
     bool supports_clustered_keys() {
