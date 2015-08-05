@@ -24,6 +24,7 @@ Copyright (c) 2006, 2015, Percona and/or its affiliates. All rights reserved.
 #ident "Copyright (c) 2006, 2015, Percona and/or its affiliates. All rights reserved."
 
 #include "toku_time.h"
+#include "my_check_opt.h"
 
 struct analyze_progress_extra {
     THD *thd;
@@ -110,15 +111,17 @@ int ha_tokudb::analyze(THD *thd, HA_CHECK_OPT *check_opt) {
                                   (int) table_share->db.length, table_share->db.str,
                                   (int) table_share->table_name.length, table_share->table_name.str,
                                   key_name);
-                thd->protocol->prepare_for_resend();
-                thd->protocol->store(name, namelen,  system_charset_info);
-                thd->protocol->store("analyze", 7, system_charset_info);
-                thd->protocol->store("info", 4, system_charset_info);
                 char rowmsg[256]; int rowmsglen;
                 rowmsglen = snprintf(rowmsg, sizeof rowmsg, "rows processed %" PRIu64 " rows deleted %" PRIu64, rows, deleted_rows);
-                thd->protocol->store(rowmsg, rowmsglen, system_charset_info);
-                thd->protocol->write();
-
+#if 0
+                Protocol *protocol = thd->protocol;
+                protocol->prepare_for_resend();
+                protocol->store(name, namelen,  system_charset_info);
+                protocol->store("analyze", 7, system_charset_info);
+                protocol->store("info", 4, system_charset_info);
+                protocol->store(rowmsg, rowmsglen, system_charset_info);
+                protocol->write();
+#endif
                 sql_print_information("tokudb analyze on %.*s %.*s",
                                       namelen, name, rowmsglen, rowmsg);
             }
@@ -277,12 +280,15 @@ static void ha_tokudb_check_info(THD *thd, TABLE *table, const char *msg) {
         snprintf(tablename, sizeof tablename, "%.*s.%.*s",
                  (int) table->s->db.length, table->s->db.str,
                  (int) table->s->table_name.length, table->s->table_name.str);
-        thd->protocol->prepare_for_resend();
-        thd->protocol->store(tablename, strlen(tablename), system_charset_info);
-        thd->protocol->store("check", 5, system_charset_info);
-        thd->protocol->store("info", 4, system_charset_info);
-        thd->protocol->store(msg, strlen(msg), system_charset_info);
-        thd->protocol->write();
+#if 0
+        Protocol *protocol = thd->protocol;
+        protocol->prepare_for_resend();
+        protocol->store(tablename, strlen(tablename), system_charset_info);
+        protocol->store("check", 5, system_charset_info);
+        protocol->store("info", 4, system_charset_info);
+        protocol->store(msg, strlen(msg), system_charset_info);
+        protocol->write();
+#endif
     }
 }
 
