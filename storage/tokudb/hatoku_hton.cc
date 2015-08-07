@@ -802,13 +802,18 @@ static int tokudb_rollback(handlerton * hton, THD * thd, bool all) {
 }
 
 #if TOKU_INCLUDE_XA
-static bool tokudb_sync_on_prepare(void) {
+static bool tokudb_sync_on_prepare(THD *thd) {
+    bool r = true;
     // skip sync of log if fsync log period > 0
     if (tokudb_fsync_log_period > 0)
-        return false;
-    else 
-        return true;
-}   
+        r = false;
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    // Check the client durability property which is set during 2PC
+    if (thd_get_durability_property(thd) == HA_IGNORE_DURABILITY)
+        r = false;
+#endif
+    return r;
+}
 
 static int tokudb_xa_prepare(handlerton* hton, THD* thd, bool all) {
     TOKUDB_DBUG_ENTER("");
@@ -823,7 +828,7 @@ static int tokudb_xa_prepare(handlerton* hton, THD* thd, bool all) {
     tokudb_trx_data *trx = (tokudb_trx_data *) thd_get_ha_data(thd, hton);
     DB_TXN* txn = all ? trx->all : trx->stmt;
     if (txn) {
-        uint32_t syncflag = tokudb_sync_on_prepare() ? 0 : DB_TXN_NOSYNC;
+        uint32_t syncflag = tokudb_sync_on_prepare(thd) ? 0 : DB_TXN_NOSYNC;
         if (tokudb_debug & TOKUDB_DEBUG_TXN) {
             TOKUDB_TRACE("doing txn prepare:%d:%p", all, txn);
         }
