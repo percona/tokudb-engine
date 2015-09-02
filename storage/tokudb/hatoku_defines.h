@@ -56,6 +56,7 @@ Copyright (c) 2006, 2015, Percona and/or its affiliates. All rights reserved.
 #define TOKU_INCLUDE_ALTER_56 1
 #define TOKU_INCLUDE_ROW_TYPE_COMPRESSION 0
 #define TOKU_PARTITION_WRITE_FRM_DATA 0
+#define TOKU_INCLUDE_XA 1
 #else
 #error
 #endif
@@ -429,43 +430,87 @@ static inline void* tokudb_my_multi_malloc(myf myFlags, ...) {
   return start;
 }
 
-static inline void tokudb_pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+#include <thr_mutex.h>
+#include <thr_cond.h>
+typedef native_mutex_t tokudb_mutex_t;
+typedef native_mutexattr_t tokudb_mutexattr_t;
+typedef native_cond_t tokudb_cond_t;
+#else
+typedef pthread_mutex_t tokudb_mutex_t;
+typedef pthread_mutexattr_t tokudb_mutexattr_t;
+typedef pthread_cond_t tokudb_cond_t;
+#endif
+
+static inline void tokudb_mutex_init(tokudb_mutex_t *mutex, const tokudb_mutexattr_t *attr) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_mutex_init(mutex, attr);
+#else
     int r = pthread_mutex_init(mutex, attr);
+#endif
     assert(r == 0);
 }
 
-static inline void tokudb_pthread_mutex_destroy(pthread_mutex_t *mutex) {
+static inline void tokudb_mutex_destroy(tokudb_mutex_t *mutex) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_mutex_destroy(mutex);
+#else
     int r = pthread_mutex_destroy(mutex);
+#endif
     assert(r == 0);
 }
 
-static inline void tokudb_pthread_mutex_lock(pthread_mutex_t *mutex) {
+static inline void tokudb_mutex_lock(tokudb_mutex_t *mutex) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_mutex_lock(mutex);
+#else
     int r = pthread_mutex_lock(mutex);
+#endif
     assert(r == 0);
 }
 
-static inline void tokudb_pthread_mutex_unlock(pthread_mutex_t *mutex) {
+static inline void tokudb_mutex_unlock(tokudb_mutex_t *mutex) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_mutex_unlock(mutex);
+#else
     int r = pthread_mutex_unlock(mutex);
+#endif
     assert(r == 0);
 }
 
-static inline void tokudb_pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr) {
-    int r = pthread_cond_init(cond, attr);
+static inline void tokudb_cond_init(tokudb_cond_t *cond) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_cond_init(cond);
+#else
+    int r = pthread_cond_init(cond, NULL);
+#endif
     assert(r == 0);
 }
 
-static inline void tokudb_pthread_cond_destroy(pthread_cond_t *cond) {
+static inline void tokudb_cond_destroy(tokudb_cond_t *cond) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_cond_destroy(cond);
+#else
     int r = pthread_cond_destroy(cond);
+#endif
     assert(r == 0);
 }
 
-static inline void tokudb_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
+static inline void tokudb_cond_wait(tokudb_cond_t *cond, tokudb_mutex_t *mutex) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_cond_wait(cond, mutex);
+#else
     int r = pthread_cond_wait(cond, mutex);
+#endif
     assert(r == 0);
 }
 
-static inline void tokudb_pthread_cond_broadcast(pthread_cond_t *cond) {
+static inline void tokudb_cond_broadcast(tokudb_cond_t *cond) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_cond_broadcast(cond);
+#else
     int r = pthread_cond_broadcast(cond);
+#endif
     assert(r == 0);
 }
 
@@ -481,6 +526,58 @@ static uint tokudb_uint3korr(const uchar *a) {
     uchar b[4] = {};
     memcpy(b, a, 3);
     return uint3korr(b);
+}
+
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+#include <thr_rwlock.h>
+typedef native_rw_lock_t tokudb_rw_lock_t;
+#else
+typedef rw_lock_t tokudb_rw_lock_t;
+#endif
+
+static inline void tokudb_rw_init(tokudb_rw_lock_t *rwlock) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_rw_init(rwlock);
+#else
+    int r = my_rwlock_init(rwlock, 0);
+#endif
+    assert(r == 0);
+}
+
+static inline void tokudb_rw_destroy(tokudb_rw_lock_t *rwlock) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_rw_destroy(rwlock);
+#else
+    int r = rwlock_destroy(rwlock);
+#endif
+    assert(r == 0);
+}
+
+static inline void tokudb_rw_rdlock(tokudb_rw_lock_t *rwlock) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_rw_rdlock(rwlock);
+#else
+    int r = rw_rdlock(rwlock);
+#endif
+    assert(r == 0);
+}
+
+static inline void tokudb_rw_unlock(tokudb_rw_lock_t *rwlock) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_rw_unlock(rwlock);
+#else
+    int r = rw_unlock(rwlock);
+#endif
+    assert(r == 0);
+}
+
+static inline void tokudb_rw_wrlock(tokudb_rw_lock_t *rwlock) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    int r = native_rw_wrlock(rwlock);
+#else
+    int r = rw_wrlock(rwlock);
+#endif
+    assert(r == 0);
 }
 
 #endif // _TOKUDB_PORTABILITY_H
