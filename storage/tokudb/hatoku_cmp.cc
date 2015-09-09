@@ -67,6 +67,7 @@ static bool field_valid_for_tokudb_table(Field* field) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
+    case MYSQL_TYPE_JSON:
         ret_val = true;
         goto exit;
     //
@@ -232,6 +233,7 @@ static TOKU_TYPE mysql_to_toku_type (Field* field) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
+    case MYSQL_TYPE_JSON:
         ret_val = toku_type_blob;
         goto exit;
     //
@@ -464,8 +466,13 @@ static inline int cmp_toku_double(uchar* a_buf, uchar* b_buf) {
     int ret_val;
     double a_num;
     double b_num;
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    doubleget(&a_num, a_buf);
+    doubleget(&b_num, b_buf);
+#else
     doubleget(a_num, a_buf);
     doubleget(b_num, b_buf);
+#endif
     if (a_num < b_num) {
         ret_val = -1;
         goto exit;
@@ -3182,6 +3189,7 @@ static bool fields_are_same_type(Field* a, Field* b) {
     case MYSQL_TYPE_MEDIUM_BLOB:
     case MYSQL_TYPE_BLOB:
     case MYSQL_TYPE_LONG_BLOB:
+    case MYSQL_TYPE_JSON:
         // test the charset
         if (a->charset()->number != b->charset()->number) {
             retval = false;

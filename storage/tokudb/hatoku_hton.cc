@@ -85,7 +85,11 @@ static handler *tokudb_create_handler(handlerton * hton, TABLE_SHARE * table, ME
 static void tokudb_print_error(const DB_ENV * db_env, const char *db_errpfx, const char *buffer);
 static void tokudb_cleanup_log_files(void);
 static int tokudb_end(handlerton * hton, ha_panic_function type);
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+static bool tokudb_flush_logs(handlerton * hton, bool binlog_group_commit);
+#else
 static bool tokudb_flush_logs(handlerton * hton);
+#endif
 static bool tokudb_show_status(handlerton * hton, THD * thd, stat_print_fn * print, enum ha_stat_type);
 #if TOKU_INCLUDE_HANDLERTON_HANDLE_FATAL_SIGNAL
 static void tokudb_handle_fatal_signal(handlerton *hton, THD *thd, int sig);
@@ -117,10 +121,11 @@ char *tokudb_data_dir;
 ulong tokudb_debug;
 DB_ENV *db_env;
 HASH tokudb_open_tables;
-pthread_mutex_t tokudb_mutex;
+tokudb_mutex_t tokudb_mutex;
 
 #if TOKU_THDVAR_MEMALLOC_BUG
-static pthread_mutex_t tokudb_map_mutex;
+#include <my_tree.h>
+static tokudb_mutex_t tokudb_map_mutex;
 static TREE tokudb_map;
 struct tokudb_map_pair {
     THD *thd;
@@ -227,16 +232,16 @@ extern "C" {
 // use constructor and destructor functions to create and destroy
 // the lock before and after main(), respectively.
 static int tokudb_hton_initialized;
-static rw_lock_t tokudb_hton_initialized_lock;
+static tokudb_rw_lock_t tokudb_hton_initialized_lock;
 
 static void create_tokudb_hton_intialized_lock(void)  __attribute__((constructor));
 static void create_tokudb_hton_intialized_lock(void) {
-    my_rwlock_init(&tokudb_hton_initialized_lock, 0);
+    tokudb_rw_init(&tokudb_hton_initialized_lock);
 }
 
 static void destroy_tokudb_hton_initialized_lock(void) __attribute__((destructor));
 static void destroy_tokudb_hton_initialized_lock(void) {
-    rwlock_destroy(&tokudb_hton_initialized_lock);
+    tokudb_rw_destroy(&tokudb_hton_initialized_lock);
 }
 
 static SHOW_VAR *toku_global_status_variables = NULL;
@@ -284,13 +289,16 @@ static int tokudb_set_product_name(void) {
     return r;
 }
 
+#if TOKUDB_CHECK_JEMALLOC
+#include <dlfcn.h>
+#endif
+
 static int tokudb_init_func(void *p) {
     TOKUDB_DBUG_ENTER("%p", p);
     int r;
 
     // 3938: lock the handlerton's initialized status flag for writing
-    r = rw_wrlock(&tokudb_hton_initialized_lock);
-    assert(r == 0);
+    tokudb_rw_wrlock(&tokudb_hton_initialized_lock);
 
     db_env = NULL;
     tokudb_hton = (handlerton *) p;
@@ -308,8 +316,12 @@ static int tokudb_init_func(void *p) {
         goto error;
     }
 
-    tokudb_pthread_mutex_init(&tokudb_mutex, MY_MUTEX_INIT_FAST);
+    tokudb_mutex_init(&tokudb_mutex, MY_MUTEX_INIT_FAST);
+#if 50708 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    (void) my_hash_init(&tokudb_open_tables, table_alias_charset, 32, 0, 0, (my_hash_get_key) tokudb_get_key, 0, 0, 0);
+#else
     (void) my_hash_init(&tokudb_open_tables, table_alias_charset, 32, 0, 0, (my_hash_get_key) tokudb_get_key, 0, 0);
+#endif
 
     tokudb_hton->state = SHOW_OPTION_YES;
     // tokudb_hton->flags= HTON_CAN_RECREATE;  // QQQ this came from skeleton
@@ -537,13 +549,13 @@ static int tokudb_init_func(void *p) {
     tokudb_primary_key_bytes_inserted = create_partitioned_counter();
 
 #if TOKU_THDVAR_MEMALLOC_BUG
-    tokudb_pthread_mutex_init(&tokudb_map_mutex, MY_MUTEX_INIT_FAST);
+    tokudb_mutex_init(&tokudb_map_mutex, MY_MUTEX_INIT_FAST);
     init_tree(&tokudb_map, 0, 0, 0, tokudb_map_pair_cmp, true, NULL, NULL);
 #endif
 
     //3938: succeeded, set the init status flag and unlock
     tokudb_hton_initialized = 1;
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     DBUG_RETURN(false);
 
 error:
@@ -555,7 +567,7 @@ error:
 
     // 3938: failed to initialized, drop the flag and lock
     tokudb_hton_initialized = 0;
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     DBUG_RETURN(true);
 }
 
@@ -566,7 +578,7 @@ static int tokudb_done_func(void *p) {
     tokudb_my_free(toku_global_status_rows);
     toku_global_status_rows = NULL;
     my_hash_free(&tokudb_open_tables);
-    tokudb_pthread_mutex_destroy(&tokudb_mutex);
+    tokudb_mutex_destroy(&tokudb_mutex);
     TOKUDB_DBUG_RETURN(0);
 }
 
@@ -582,7 +594,7 @@ int tokudb_end(handlerton * hton, ha_panic_function type) {
     // initialized. grab a writer lock for the duration of the
     // call, so we can drop the flag and destroy the mutexes
     // in isolation.
-    rw_wrlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_wrlock(&tokudb_hton_initialized_lock);
     assert(tokudb_hton_initialized);
 
     if (db_env) {
@@ -626,13 +638,13 @@ int tokudb_end(handlerton * hton, ha_panic_function type) {
     }
 
 #if TOKU_THDVAR_MEMALLOC_BUG
-    tokudb_pthread_mutex_destroy(&tokudb_map_mutex);
+    tokudb_mutex_destroy(&tokudb_map_mutex);
     delete_tree(&tokudb_map);
 #endif
 
     // 3938: drop the initialized flag and unlock
     tokudb_hton_initialized = 0;
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
 
     TOKUDB_DBUG_RETURN(error);
 }
@@ -645,19 +657,23 @@ static int tokudb_close_connection(handlerton * hton, THD * thd) {
     }
     tokudb_my_free(trx);
 #if TOKU_THDVAR_MEMALLOC_BUG
-    tokudb_pthread_mutex_lock(&tokudb_map_mutex);
+    tokudb_mutex_lock(&tokudb_map_mutex);
     struct tokudb_map_pair key = { thd, NULL };
     struct tokudb_map_pair *found_key = (struct tokudb_map_pair *) tree_search(&tokudb_map, &key, NULL);
     if (found_key) {
         tokudb_my_free(found_key->last_lock_timeout);
         tree_delete(&tokudb_map, found_key, sizeof *found_key, NULL);
     }
-    tokudb_pthread_mutex_unlock(&tokudb_map_mutex);
+    tokudb_mutex_unlock(&tokudb_map_mutex);
 #endif
     return error;
 }
 
-bool tokudb_flush_logs(handlerton * hton) {
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+static bool tokudb_flush_logs(handlerton *hton, bool binlog_group_commit) {
+#else
+static bool tokudb_flush_logs(handlerton *hton) {
+#endif
     TOKUDB_DBUG_ENTER("");
     int error;
     bool result = 0;
@@ -1635,7 +1651,7 @@ static int tokudb_file_map_fill_table(THD *thd, TABLE_LIST *tables, COND *cond) 
     int error;
     TABLE *table = tables->table;
 
-    rw_rdlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_rdlock(&tokudb_hton_initialized_lock);
 
     if (!tokudb_hton_initialized) {
         error = ER_PLUGIN_IS_NOT_LOADED;
@@ -1646,7 +1662,7 @@ static int tokudb_file_map_fill_table(THD *thd, TABLE_LIST *tables, COND *cond) 
             my_error(ER_GET_ERRNO, MYF(0), error, tokudb_hton_name);
     }
 
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     TOKUDB_DBUG_RETURN(error);
 }
 
@@ -1785,7 +1801,7 @@ static int tokudb_fractal_tree_info_fill_table(THD *thd, TABLE_LIST *tables, CON
 
     // 3938: Get a read lock on the status flag, since we must
     // read it before safely proceeding
-    rw_rdlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_rdlock(&tokudb_hton_initialized_lock);
 
     if (!tokudb_hton_initialized) {
         error = ER_PLUGIN_IS_NOT_LOADED;
@@ -1797,7 +1813,7 @@ static int tokudb_fractal_tree_info_fill_table(THD *thd, TABLE_LIST *tables, CON
     }
 
     //3938: unlock the status flag lock
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     TOKUDB_DBUG_RETURN(error);
 }
 
@@ -2000,7 +2016,7 @@ static int tokudb_fractal_tree_block_map_fill_table(THD *thd, TABLE_LIST *tables
 
     // 3938: Get a read lock on the status flag, since we must
     // read it before safely proceeding
-    rw_rdlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_rdlock(&tokudb_hton_initialized_lock);
 
     if (!tokudb_hton_initialized) {
         error = ER_PLUGIN_IS_NOT_LOADED;
@@ -2012,7 +2028,7 @@ static int tokudb_fractal_tree_block_map_fill_table(THD *thd, TABLE_LIST *tables
     }
 
     //3938: unlock the status flag lock
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     TOKUDB_DBUG_RETURN(error);
 }
 
@@ -2105,7 +2121,11 @@ static void tokudb_lock_timeout_callback(DB *db, uint64_t requesting_txnid, cons
         // generate a JSON document with the lock timeout info
         String log_str;
         log_str.append("{");
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+        uint64_t mysql_thread_id = thd->thread_id();
+#else
         uint64_t mysql_thread_id = thd->thread_id;
+#endif
         log_str.append("\"mysql_thread_id\":");
         log_str.append_ulonglong(mysql_thread_id);
         log_str.append(", \"dbname\":");
@@ -2137,19 +2157,21 @@ static void tokudb_lock_timeout_callback(DB *db, uint64_t requesting_txnid, cons
             THDVAR(thd, last_lock_timeout) = new_lock_timeout;
             tokudb_my_free(old_lock_timeout);
 #if TOKU_THDVAR_MEMALLOC_BUG
-            tokudb_pthread_mutex_lock(&tokudb_map_mutex);
+            tokudb_mutex_lock(&tokudb_map_mutex);
             struct tokudb_map_pair old_key = { thd, old_lock_timeout };
             tree_delete(&tokudb_map, &old_key, sizeof old_key, NULL);
             struct tokudb_map_pair new_key = { thd, new_lock_timeout };
             tree_insert(&tokudb_map, &new_key, sizeof new_key, NULL);
-            tokudb_pthread_mutex_unlock(&tokudb_map_mutex);
+            tokudb_mutex_unlock(&tokudb_map_mutex);
 #endif
         }
         // dump to stderr
         if (lock_timeout_debug & 2) {
             sql_print_error("%s: lock timeout %s", tokudb_hton_name, log_str.c_ptr());
+#if !(50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799)
             LEX_STRING *qs = thd_query_string(thd);
             sql_print_error("%s: requesting_thread_id:%" PRIu64 " q:%.*s", tokudb_hton_name, mysql_thread_id, (int) qs->length, qs->str);
+#endif
 #if TOKU_INCLUDE_LOCK_TIMEOUT_QUERY_STRING
             uint64_t blocking_thread_id = 0;
             if (tokudb_txn_id_to_client_id(thd, blocking_txnid, &blocking_thread_id)) {
@@ -2202,7 +2224,7 @@ static int tokudb_trx_fill_table(THD *thd, TABLE_LIST *tables, COND *cond) {
     TOKUDB_DBUG_ENTER("");
     int error;
     
-    rw_rdlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_rdlock(&tokudb_hton_initialized_lock);
 
     if (!tokudb_hton_initialized) {
         error = ER_PLUGIN_IS_NOT_LOADED;
@@ -2214,7 +2236,7 @@ static int tokudb_trx_fill_table(THD *thd, TABLE_LIST *tables, COND *cond) {
             my_error(ER_GET_ERRNO, MYF(0), error, tokudb_hton_name);
     }
 
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     TOKUDB_DBUG_RETURN(error);
 }
 
@@ -2289,7 +2311,7 @@ static int tokudb_lock_waits_fill_table(THD *thd, TABLE_LIST *tables, COND *cond
     TOKUDB_DBUG_ENTER("");
     int error;
     
-    rw_rdlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_rdlock(&tokudb_hton_initialized_lock);
 
     if (!tokudb_hton_initialized) {
         error = ER_PLUGIN_IS_NOT_LOADED;
@@ -2301,7 +2323,7 @@ static int tokudb_lock_waits_fill_table(THD *thd, TABLE_LIST *tables, COND *cond
             my_error(ER_GET_ERRNO, MYF(0), error, tokudb_hton_name);
     }
 
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     TOKUDB_DBUG_RETURN(error);
 }
 
@@ -2382,7 +2404,7 @@ static int tokudb_locks_fill_table(THD *thd, TABLE_LIST *tables, COND *cond) {
     TOKUDB_DBUG_ENTER("");
     int error;
     
-    rw_rdlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_rdlock(&tokudb_hton_initialized_lock);
 
     if (!tokudb_hton_initialized) {
         error = ER_PLUGIN_IS_NOT_LOADED;
@@ -2394,7 +2416,7 @@ static int tokudb_locks_fill_table(THD *thd, TABLE_LIST *tables, COND *cond) {
             my_error(ER_GET_ERRNO, MYF(0), error, tokudb_hton_name);
     }
 
-    rw_unlock(&tokudb_hton_initialized_lock);
+    tokudb_rw_unlock(&tokudb_hton_initialized_lock);
     TOKUDB_DBUG_RETURN(error);
 }
 
