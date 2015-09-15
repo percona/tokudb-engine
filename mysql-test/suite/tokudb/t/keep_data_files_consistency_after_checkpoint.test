@@ -1,0 +1,109 @@
+# conn1 mocks hot backup
+# conn2 mocks writing during TokuDB data file copying
+--source include/linux.inc
+--source include/have_tokudb.inc
+
+# mkdir the tmp backup dir
+--mkdir $MYSQL_TMP_DIR/backupdir
+let $MYSQLD_DATADIR= `select @@datadir`;
+CREATE TABLE test.t1 (c1 INT PRIMARY KEY, c2 INT, c3 INT) ENGINE=TOKUDB;
+INSERT INTO test.t1 VALUES(1111,1111,11111);
+
+# do  checkpoint
+SET GLOBAL tokudb_checkpoint_on_flush_logs=ON;
+FLUSH LOGS;
+SET GLOBAL tokudb_checkpoint_on_flush_logs=OFF;
+
+connect (conn1, localhost, root,,);
+connection conn1;
+
+#conn1 write(1,1,1)
+INSERT INTO test.t1 VALUES(1,1,1);
+# fake hot backup 1) tokudb checkpoint lock
+SET GLOBAL TOKUDB_CHECKPOINT_LOCK=ON;
+
+connect (conn2, localhost, root,,);
+connection conn2;
+# conn2 write(2,2,2)
+INSERT INTO test.t1 VALUES(2,2,2);
+
+connection conn1;
+# fake hot backup 2) FLUSH TABLES WITH READ LOCK
+FLUSH TABLES WITH READ LOCK;
+
+# fake hot backup 3) copy tokudb.* and redo-log to backup dir
+--exec cp -rf $MYSQLD_DATADIR/tokudb.* $MYSQL_TMP_DIR/backupdir/
+--exec cp -rf $MYSQLD_DATADIR/log000* $MYSQL_TMP_DIR/backupdir/
+
+# fake hot backup 4) unlock tables
+UNLOCK TABLES;
+
+connection conn2;
+# conn2 write(22,22,22), this row can't be visible in new backup instance
+INSERT INTO test.t1 VALUES(22,22,22);
+FLUSH TABLES;
+
+connection conn1;
+# fake hot backup 5) copy tokudb datas file to backup dir
+--exec cp -rf $MYSQLD_DATADIR/_test_t1* $MYSQL_TMP_DIR/backupdir/
+
+# fake hot backup 6) release tokudb checkpoint lock
+SET GLOBAL TOKUDB_CHECKPOINT_LOCK=OFF;
+
+--echo shutdown server
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--shutdown_server 10
+--source include/wait_until_disconnected.inc
+
+# cleanup tokudb files
+--exec rm -rf $MYSQLD_DATADIR/tokudb.*
+--exec rm -rf $MYSQLD_DATADIR/log000*
+--exec rm -rf $MYSQLD_DATADIR/_test_t1*
+
+# fake backup recovery: copy tokudb.* and redo-log, data files from backup dir
+--exec cp -rf $MYSQL_TMP_DIR/backupdir/* $MYSQLD_DATADIR/
+
+--enable_reconnect
+--exec echo "restart: --innodb_buffer_pool_size=100M --tokudb_cache_size=100M" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+
+OPTIMIZE TABLE test.t1;
+SELECT * FROM test.t1;
+
+# crash and recover test
+CREATE TABLE test.t2 (c1 INT, c2 INT, PRIMARY KEY(c1), CLUSTERING KEY(c2)) ENGINE=TOKUDB;
+
+--disable_query_log
+--let $i=1000
+while ($i)
+{
+  --eval INSERT INTO test.t2 VALUES($i, $i)
+  --dec $i
+}
+--enable_query_log
+
+--disable_query_log
+call mtr.add_suppression("Attempting backtrace");
+--enable_query_log
+
+# make mtr expect the "crash"
+--let $_server_id= `SELECT @@server_id`
+--let $_expect_file_name= $MYSQLTEST_VARDIR/tmp/mysqld.$_server_id.expect
+--exec echo "wait" > $_expect_file_name
+--let $_mysqld_datadir= `SELECT @@datadir`
+
+# crashed, sending SIGSEGV
+--let $pid_file_name = `select @@pid_file`
+--exec kill -9 `cat $pid_file_name`;
+--echo 1
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+# start mysqld
+--exec echo "restart" > $_expect_file_name
+--source include/wait_until_connected_again.inc
+SELECT COUNT(*) FROM test.t2;
+
+--exec rm -rf $MYSQL_TMP_DIR/backupdir/
+DROP TABLE test.t1;
+DROP TABLE test.t2;
