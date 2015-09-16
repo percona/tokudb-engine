@@ -1,0 +1,30 @@
+CREATE TABLE test.t1 (c1 INT PRIMARY KEY, c2 INT, c3 INT) ENGINE=TOKUDB;
+INSERT INTO test.t1 VALUES(1111,1111,11111);
+SET GLOBAL tokudb_checkpoint_on_flush_logs=ON;
+FLUSH LOGS;
+SET GLOBAL tokudb_checkpoint_on_flush_logs=OFF;
+INSERT INTO test.t1 VALUES(1,1,1);
+SET GLOBAL TOKUDB_CHECKPOINT_LOCK=ON;
+INSERT INTO test.t1 VALUES(2,2,2);
+FLUSH TABLES WITH READ LOCK;
+UNLOCK TABLES;
+INSERT INTO test.t1 VALUES(22,22,22);
+FLUSH TABLES;
+SET GLOBAL TOKUDB_CHECKPOINT_LOCK=OFF;
+shutdown server
+OPTIMIZE TABLE test.t1;
+Table	Op	Msg_type	Msg_text
+test.t1	optimize	note	Table does not support optimize, doing recreate + analyze instead
+test.t1	optimize	status	OK
+SELECT * FROM test.t1;
+c1	c2	c3
+1	1	1
+2	2	2
+1111	1111	11111
+CREATE TABLE test.t2 (c1 INT, c2 INT, PRIMARY KEY(c1), CLUSTERING KEY(c2)) ENGINE=TOKUDB;
+1
+SELECT COUNT(*) FROM test.t2;
+COUNT(*)
+1000
+DROP TABLE test.t1;
+DROP TABLE test.t2;
