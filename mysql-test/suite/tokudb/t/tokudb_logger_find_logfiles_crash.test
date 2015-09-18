@@ -1,0 +1,29 @@
+--source include/have_tokudb.inc
+--let $_mysqld_datadir= `SELECT @@datadir`
+
+# create log0001 file
+--exec touch $_mysqld_datadir/log0001
+
+CREATE DATABASE log0002;
+USE log0002;
+CREATE TABLE t1(a int) ENGINE=TOKUDB;
+INSERT INTO t1 VALUES(1);
+
+--echo shutdown server
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--shutdown_server 10
+--source include/wait_until_disconnected.inc
+# Do something while server is down
+--enable_reconnect
+--exec echo "restart: --tokudb_cache_size=100M" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+
+--exec ls $_mysqld_datadir/log* |grep -q log0001
+--exec ls $_mysqld_datadir/log* |grep -q log0002
+
+USE log0002;
+SELECT * FROM t1;
+
+DROP DATABASE log0002;
+
+--exec rm $_mysqld_datadir/log0001
