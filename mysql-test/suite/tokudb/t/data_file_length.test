@@ -1,0 +1,42 @@
+--source include/have_tokudb.inc
+
+# data file length test
+CREATE TABLE t1 (c1 INT, c2 VARCHAR(10)) ENGINE=TOKUDB;
+INSERT INTO t1 values (1, '12345678');
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+FLUSH TABLES;
+
+SELECT DATA_LENGTH from INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='t1';
+--let $_mysqld_datadir= `SELECT @@datadir`
+--exec du -b $_mysqld_datadir/_test_t1_main* |cut -f1
+
+# cluster index data length test
+CREATE TABLE t2 (c1 INT PRIMARY KEY, c2 VARCHAR(1400)) ENGINE=TOKUDB;
+alter table t2 add clustering index clstr_key(c1,c2);
+INSERT INTO t2 values (1, repeat('1', 1300));
+INSERT INTO t2 values (2, repeat('2', 1300));
+INSERT INTO t2 values (3, repeat('3', 1300));
+INSERT INTO t2 values (4, repeat('4', 1300));
+FLUSH TABLES;
+
+SELECT DATA_LENGTH,INDEX_LENGTH from INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='t2';
+--exec du -b $_mysqld_datadir/_test_t2_main* |cut -f1
+--exec du -b $_mysqld_datadir/_test_t2_key* |cut -f1
+
+# cleanup
+DROP TABLE t1;
+DROP TABLE t2;
