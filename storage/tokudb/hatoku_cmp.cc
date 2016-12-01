@@ -464,8 +464,13 @@ static inline int cmp_toku_double(uchar* a_buf, uchar* b_buf) {
     int ret_val;
     double a_num;
     double b_num;
+#if 50700 <= MYSQL_VERSION_ID && MYSQL_VERSION_ID <= 50799
+    doubleget(&a_num, a_buf);
+    doubleget(&b_num, b_buf);
+#else
     doubleget(a_num, a_buf);
     doubleget(b_num, b_buf);
+#endif
     if (a_num < b_num) {
         ret_val = -1;
         goto exit;
